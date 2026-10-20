@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deterministic-dual-reporter"
+version = "1.0.0"
+description = "Deterministic dual-output QA reporting pipeline generating responsive HTML5 telemetry dashboards and formal executive DOCX reports with embedded SHA-256 evidence hashes."
+readme = "README.md"
+authors = [
+    { name = "Aldyan Saputra", email = "aldyansaputra26@gmail.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "python-docx>=1.1.0",
+    "jinja2>=3.1.0",
+]
+
+[project.scripts]
+dual-reporter = "dual_reporter.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dual_reporter"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

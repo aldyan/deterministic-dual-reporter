@@ -1,0 +1,157 @@
+{
+  "run_id": "RUN-2026-E2E-09",
+  "system_under_test": "Enterprise Core Gateway & Settlement Engine",
+  "environment": "SIT / Staging Cluster",
+  "executed_at": "2026-10-20 14:00:00 UTC",
+  "verification_lead": "Aldyan Saputra",
+  "test_cases": [
+    {
+      "id": "TC-AUTH-001",
+      "component": "Authentication Gateway",
+      "title": "Validate OAuth2 Bearer token issuance with valid credentials",
+      "technique": "HAPPY_PATH",
+      "status": "PASSED",
+      "duration_ms": 128,
+      "evidence_id": "EV-01"
+    },
+    {
+      "id": "TC-AUTH-002",
+      "component": "Authentication Gateway",
+      "title": "Reject token request with expired client secrets",
+      "technique": "NEGATIVE_SECURITY",
+      "status": "PASSED",
+      "duration_ms": 94,
+      "evidence_id": "EV-02"
+    },
+    {
+      "id": "TC-TXN-001",
+      "component": "Transaction Processing",
+      "title": "Boundary Value Analysis: Minimum allowable transfer amount (0.01 USD)",
+      "technique": "BOUNDARY_VALUE_ANALYSIS",
+      "status": "PASSED",
+      "duration_ms": 210,
+      "evidence_id": "EV-03"
+    },
+    {
+      "id": "TC-TXN-002",
+      "component": "Transaction Processing",
+      "title": "Boundary Value Analysis: Exact upper ceiling transfer cap (50,000.00 USD)",
+      "technique": "BOUNDARY_VALUE_ANALYSIS",
+      "status": "PASSED",
+      "duration_ms": 185
+    },
+    {
+      "id": "TC-TXN-003",
+      "component": "Transaction Processing",
+      "title": "Reject transfer exceeding upper ceiling limit (50,000.01 USD)",
+      "technique": "EQUIVALENCE_PARTITIONING",
+      "status": "PASSED",
+      "duration_ms": 140
+    },
+    {
+      "id": "TC-CONCUR-001",
+      "component": "Ledger Settlement",
+      "title": "Simulate 50 parallel debit requests on single account for row-level locking",
+      "technique": "CONCURRENCY_STRESS",
+      "status": "FAILED",
+      "duration_ms": 1420,
+      "defect_id": "DEF-01",
+      "evidence_id": "EV-04"
+    },
+    {
+      "id": "TC-RECON-001",
+      "component": "Reconciliation Engine",
+      "title": "Verify daily batch clearing journal balances to zero discrepancy",
+      "technique": "DATA_INTEGRITY",
+      "status": "PASSED",
+      "duration_ms": 680,
+      "evidence_id": "EV-05"
+    },
+    {
+      "id": "TC-API-001",
+      "component": "Merchant Integration API",
+      "title": "Validate webhook event callback delivery with HMAC-SHA256 signature",
+      "technique": "CONTRACT_TESTING",
+      "status": "FAILED",
+      "duration_ms": 340,
+      "defect_id": "DEF-02",
+      "evidence_id": "EV-06"
+    },
+    {
+      "id": "TC-AUDIT-001",
+      "component": "Database Audit",
+      "title": "Read-only inspection of settlement balance stored procedure execution plan",
+      "technique": "WHITE_BOX_TRACE",
+      "status": "PASSED",
+      "duration_ms": 115
+    },
+    {
+      "id": "TC-PERF-001",
+      "component": "Gateway Routing",
+      "title": "Sustained throughput validation under 5,000 req/sec load profile",
+      "technique": "LOAD_PROFILE",
+      "status": "PASSED",
+      "duration_ms": 5000
+    }
+  ],
+  "defects": [
+    {
+      "id": "DEF-01",
+      "title": "Deadlock condition encountered under 50 simultaneous debit calls",
+      "severity": "MAJOR",
+      "steps": "1. Initialize account with $10,000 balance\\n2. Trigger 50 asynchronous debit requests of $100 within a 20ms window\\n3. Observe database connection pool exhaustion and transaction lock table",
+      "expected_result": "All 50 requests serialize cleanly via optimistic row locking without timeout",
+      "actual_result": "3 out of 50 threads aborted with SQL Deadlock Error 1205",
+      "root_cause": "Missing clustered index hint in transaction update query, causing range lock escalation",
+      "evidence_ref": "EV-04"
+    },
+    {
+      "id": "DEF-02",
+      "title": "Webhook payload missing timestamp ISO-8601 millisecond precision",
+      "severity": "MINOR",
+      "steps": "1. Dispatch settlement confirmation webhook event\\n2. Inspect delivered JSON payload headers and body\\n3. Compare 'event_timestamp' format against API spec schema",
+      "expected_result": "Timestamp formatted as 'YYYY-MM-DDTHH:mm:ss.sssZ'",
+      "actual_result": "Timestamp truncated to seconds 'YYYY-MM-DDTHH:mm:ssZ'",
+      "root_cause": "Serialization formatter in event dispatch worker drops sub-second fractions",
+      "evidence_ref": "EV-06"
+    }
+  ],
+  "evidences": [
+    {
+      "id": "EV-01",
+      "name": "oauth2_token_response.json",
+      "evidence_type": "HTTP_PAYLOAD",
+      "content_or_path": "{\"token_type\": \"Bearer\", \"expires_in\": 3600, \"scope\": \"settlement:read settlement:write\", \"status\": 200}"
+    },
+    {
+      "id": "EV-02",
+      "name": "auth_rejection_header.txt",
+      "evidence_type": "HTTP_HEADERS",
+      "content_or_path": "HTTP/1.1 401 Unauthorized\\nWWW-Authenticate: Bearer error=\"invalid_token\"\\nContent-Type: application/json"
+    },
+    {
+      "id": "EV-03",
+      "name": "bva_transfer_min_record.json",
+      "evidence_type": "DATABASE_ROW",
+      "content_or_path": "SELECT txn_id, amount, currency, status FROM Ledger WHERE amount = 0.01; -- Returned 1 row: CONFIRMED"
+    },
+    {
+      "id": "EV-04",
+      "name": "deadlock_graph_trace.xml",
+      "evidence_type": "SQL_TRACE",
+      "content_or_path": "<deadlock-list><deadlock><process-list><process id=\"p1\" lockMode=\"X\" /><process id=\"p2\" lockMode=\"X\" /></process-list></deadlock></deadlock-list>"
+    },
+    {
+      "id": "EV-05",
+      "name": "daily_reconciliation_clearing.log",
+      "evidence_type": "BATCH_LOG",
+      "content_or_path": "2026-10-20 00:00:01 INFO [ClearingBatch] Total Inbound: $12,450,920.00 | Total Outbound: $12,450,920.00 | Discrepancy: $0.00 [BALANCED]"
+    },
+    {
+      "id": "EV-06",
+      "name": "webhook_event_payload.json",
+      "evidence_type": "API_PAYLOAD",
+      "content_or_path": "{\"event_id\": \"evt_998124\", \"event_type\": \"settlement.completed\", \"event_timestamp\": \"2026-10-20T14:02:11Z\"}"
+    }
+  ]
+}
